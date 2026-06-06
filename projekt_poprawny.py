@@ -18,7 +18,6 @@ from sklearn.preprocessing import StandardScaler
 # =======================
 
 class NaiveBayesCustom:
-    """ Własna implementacja Naive Bayes dla klasyfikacji binarnej """
     def __init__(self):
         self.mean = None
         self.var = None
@@ -31,25 +30,27 @@ class NaiveBayesCustom:
         self.mean = np.zeros((n_classes, X.shape[1]))
         self.var = np.zeros((n_classes, X.shape[1]))
         self.priors = np.zeros(n_classes)
+        
         for idx, c in enumerate(self.classes):
             X_c = X[y == c]
             self.mean[idx, :] = X_c.mean(axis=0)
-            self.var[idx, :] = X_c.var(axis=0)
+            self.var[idx, :] = X_c.var(axis=0) + 1e-9  # Dodaj epsilon
             self.priors[idx] = len(X_c) / len(X)
+        
         return self
 
     def _calculate_likelihood(self, X, mean, var):
         numerator = np.exp(-(X - mean) ** 2 / (2 * var + 1e-9))
-        denominator = np.sqrt(2 * np.pi * var + 1e-9)
-        return numerator / denominator
+        denominator = np.sqrt(2 * np.pi * (var + 1e-9))
+        return numerator / (denominator + 1e-9)
 
     def predict(self, X):
         predictions = []
         for x in X:
             posteriors = []
             for idx, c in enumerate(self.classes):
-                prior = np.log(self.priors[idx])
-                likelihood = np.log(self._calculate_likelihood(x, self.mean[idx, :], self.var[idx, :])).sum()
+                prior = np.log(self.priors[idx] + 1e-9)
+                likelihood = np.log(self._calculate_likelihood(x, self.mean[idx, :], self.var[idx, :]) + 1e-9).sum()
                 posterior = prior + likelihood
                 posteriors.append(posterior)
             predictions.append(self.classes[np.argmax(posteriors)])
@@ -60,14 +61,28 @@ class NaiveBayesCustom:
         for x in X:
             posteriors = []
             for idx, c in enumerate(self.classes):
-                prior = np.log(self.priors[idx])
-                likelihood = np.log(self._calculate_likelihood(x, self.mean[idx, :], self.var[idx, :])).sum()
+                prior = np.log(self.priors[idx] + 1e-9)
+                likelihood = np.log(self._calculate_likelihood(x, self.mean[idx, :], self.var[idx, :]) + 1e-9).sum()
                 posterior = prior + likelihood
                 posteriors.append(posterior)
+            
             posteriors = np.array(posteriors)
+            
+            # Obsługa inf
+            if np.any(np.isinf(posteriors)):
+                posteriors = np.where(np.isinf(posteriors), 1e10, posteriors)
+            
+            # Softmax z numeryczną stabilnością
             posteriors = np.exp(posteriors - np.max(posteriors))
-            posteriors = posteriors / posteriors.sum()
+            posterior_sum = posteriors.sum()
+            
+            if posterior_sum > 0:
+                posteriors = posteriors / posterior_sum
+            else:
+                posteriors = np.ones_like(posteriors) / len(posteriors)
+            
             probas.append(posteriors)
+        
         return np.array(probas)
 
 # =======================
@@ -83,7 +98,7 @@ class Node:
         self.value = value
 
 class DecisionTreeCustom:
-    def __init__(self, max_depth=10, min_samples_split=2):
+    def __init__(self, max_depth=5, min_samples_split=20):
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.tree = None
@@ -95,47 +110,55 @@ class DecisionTreeCustom:
     def _build_tree(self, X, y, depth):
         n_samples, n_features = X.shape
         n_classes = len(np.unique(y))
-    
+        
+        # Warunki zatrzymania
         if (depth >= self.max_depth or
             n_samples < self.min_samples_split or
             n_classes == 1):
             leaf_value = self._most_common_label(y)
             return Node(value=leaf_value)
-    
+        
         best_gini = float('inf')
         best_feature, best_threshold = None, None
-    
+        
+        # Szukaj najlepszego podziału
         for feature_idx in range(n_features):
             feature_values = X[:, feature_idx]
-            thresholds = np.unique(feature_values)
-        
-            # KLUCZOWA ZMIANA: Pobierz tylko 20 losowych progów zamiast wszystkich
-            if len(thresholds) > 20:
-                thresholds = np.random.choice(thresholds, size=20, replace=False)
-        
+            
+            # Użyj quantile-based thresholds (szybsze i lepsze)
+            thresholds = np.percentile(feature_values, np.linspace(10, 90, 15))
+            thresholds = np.unique(thresholds)
+            
             for threshold in thresholds:
                 left_mask = feature_values <= threshold
                 right_mask = ~left_mask
-            
-                if len(y[left_mask]) == 0 or len(y[right_mask]) == 0:
+                
+                n_left = np.sum(left_mask)
+                n_right = np.sum(right_mask)
+                
+                # Wymagaj minimum próbek
+                if n_left < 2 or n_right < 2:
                     continue
-            
+                
                 gini = self._gini_index(y, y[left_mask], y[right_mask])
-            
+                
                 if gini < best_gini:
                     best_gini = gini
                     best_feature = feature_idx
                     best_threshold = threshold
-    
+        
+        # Jeśli nie znaleziono podziału
         if best_feature is None:
             leaf_value = self._most_common_label(y)
             return Node(value=leaf_value)
-    
+        
+        # Dokonaj podziału
         left_mask = X[:, best_feature] <= best_threshold
         right_mask = ~left_mask
+        
         left_subtree = self._build_tree(X[left_mask], y[left_mask], depth + 1)
         right_subtree = self._build_tree(X[right_mask], y[right_mask], depth + 1)
-    
+        
         return Node(feature=best_feature, threshold=best_threshold,
                     left=left_subtree, right=right_subtree)
 
@@ -143,15 +166,25 @@ class DecisionTreeCustom:
         n = len(parent)
         n_left = len(left_child)
         n_right = len(right_child)
+        
         if n_left == 0 or n_right == 0:
             return float('inf')
-        gini_left = 1.0 - sum((np.sum(left_child == c) / n_left) ** 2 for c in np.unique(parent))
-        gini_right = 1.0 - sum((np.sum(right_child == c) / n_right) ** 2 for c in np.unique(parent))
+        
+        unique_classes = np.unique(parent)
+        
+        gini_left = 1.0 - sum((np.sum(left_child == c) / n_left) ** 2 
+                              for c in unique_classes)
+        gini_right = 1.0 - sum((np.sum(right_child == c) / n_right) ** 2 
+                               for c in unique_classes)
+        
         gini = (n_left / n) * gini_left + (n_right / n) * gini_right
         return gini
 
     def _most_common_label(self, y):
-        return np.bincount(y).argmax()
+        if len(y) == 0:
+            return 0
+        counts = np.bincount(y)
+        return np.argmax(counts)
 
     def predict(self, X):
         return np.array([self._traverse_tree(x, self.tree) for x in X])
@@ -159,6 +192,7 @@ class DecisionTreeCustom:
     def _traverse_tree(self, x, node):
         if node.value is not None:
             return node.value
+        
         if x[node.feature] <= node.threshold:
             return self._traverse_tree(x, node.left)
         else:
@@ -167,7 +201,9 @@ class DecisionTreeCustom:
     def predict_proba(self, X):
         predictions = self.predict(X)
         proba = np.zeros((len(X), 2))
-        proba[np.arange(len(X)), predictions] = 1.0
+        for i, pred in enumerate(predictions):
+            if 0 <= pred <= 1:
+                proba[i, int(pred)] = 1.0
         return proba
 
 # =======================
@@ -357,7 +393,7 @@ def main():
     results_list.append(result3)
     print(f"    ✓ Accuracy: {result3['accuracy']:.4f}")
     print("  [4/4] Decision Tree (Custom)...")
-    model_dt_custom = DecisionTreeCustom(max_depth=3, min_samples_split=2)
+    model_dt_custom = DecisionTreeCustom(max_depth=5, min_samples_split=20)
     result4, _, _ = train_and_evaluate_model(
         X_train, X_test, y_train, y_test,
         "Decision Tree (Custom)", model_dt_custom
