@@ -16,9 +16,7 @@ from sklearn.inspection import permutation_importance
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# =======================
-# 1. WLASNA IMPLEMENTACJA - NAIVE BAYES
-# =======================
+
 
 class NaiveBayesCustom:
     """ Własna implementacja Naive Bayes dla klasyfikacji binarnej """
@@ -78,10 +76,8 @@ class NaiveBayesCustom:
                 posteriors = np.ones_like(posteriors) / len(posteriors)
             probas.append(posteriors)
         return np.array(probas)
+    
 
-# =======================
-# 2. WLASNA IMPLEMENTACJA - DECISION TREE
-# =======================
 
 class Node:
     def __init__(self, feature=None, threshold=None, left=None, right=None, value=None):
@@ -103,7 +99,7 @@ class DecisionTreeCustom:
         self.n_features = X.shape[1]
         self.feature_importances_ = np.zeros(self.n_features)
         self.tree = self._build_tree(X, y, depth=0)
-        # Normalizuj importances
+
         if self.feature_importances_.sum() > 0:
             self.feature_importances_ = self.feature_importances_ / self.feature_importances_.sum()
         return self
@@ -126,7 +122,6 @@ class DecisionTreeCustom:
         for feature_idx in range(n_features):
             feature_values = X[:, feature_idx]
             
-            # Spróbuj percentile i unique values
             quantile_thresholds = np.percentile(feature_values, np.linspace(5, 95, 20))
             unique_thresholds = np.unique(feature_values)
             
@@ -161,7 +156,6 @@ class DecisionTreeCustom:
             leaf_value = self._most_common_label(y)
             return Node(value=leaf_value)
         
-        # KLUCZOWE: Dodaj gain do feature importance
         self.feature_importances_[best_feature] += best_gain * n_samples / len(y)
         
         left_mask = X[:, best_feature] <= best_threshold
@@ -207,9 +201,8 @@ class DecisionTreeCustom:
             if 0 <= pred <= 1:
                 proba[i, int(pred)] = 1.0
         return proba
-# =======================
-# 3. FEATURE ENGINEERING
-# =======================
+    
+
 
 def calculate_features(df):
     df = df.copy()
@@ -238,9 +231,7 @@ def calculate_macd(prices, fast=12, slow=26, signal=9):
     macd = ema_fast - ema_slow
     return macd
 
-# =======================
-# 4. PRZYGOTOWANIE DANYCH
-# =======================
+
 
 def load_and_prepare_multi_stock_files(data_path_pattern):
     files = glob.glob(data_path_pattern)
@@ -268,9 +259,7 @@ def get_top_tickers(df, n=100, start_year=1970, end_year=9999):
     top_tickers = ticker_volumes.head(n).index.tolist()
     return top_tickers, df_filtered
 
-# =======================
-# 5. MACIERZE BŁĘDÓW
-# =======================
+
 
 def plot_confusion_matrix(y_true, y_pred, model_name):
     """
@@ -308,13 +297,13 @@ def print_confusion_matrix_analysis(cm, model_name):
     print(f"{'Rzeczywista 1':20} {fn:6d}           {tp:6d}")
     print(f"{'='*60}")
     
-    print(f"\n📊 INTERPRETACJA:")
+    print(f"\n INTERPRETACJA:")
     print(f"  TN (True Negative):   {tn:6d}  - poprawnie przewidziano spadek")
     print(f"  FP (False Positive):  {fp:6d}  - błędnie przewidziano wzrost")
     print(f"  FN (False Negative):  {fn:6d}  - błędnie przewidziano spadek")
     print(f"  TP (True Positive):   {tp:6d}  - poprawnie przewidziano wzrost")
     
-    print(f"\n📈 METRYKI Z MACIERZY:")
+    print(f"\n METRYKI Z MACIERZY:")
     
     if (tp + fn) > 0:
         sensitivity = tp / (tp + fn)
@@ -336,9 +325,8 @@ def print_confusion_matrix_analysis(cm, model_name):
         f1 = 2 * tp / (2 * tp + fp + fn)
         print(f"  F1-Score:            {f1:.4f}  - balans precision i recall")
 
-# =======================
-# 6. WAŻNOŚĆ CECH
-# =======================
+
+
 
 def calculate_permutation_importance_all(model, X_test, y_test, feature_names, model_type):
     """
@@ -346,7 +334,6 @@ def calculate_permutation_importance_all(model, X_test, y_test, feature_names, m
     """
     from sklearn.metrics import accuracy_score
     
-    # Dla WSZYSTKICH Decision Trees (sklearn i custom)
     if hasattr(model, 'feature_importances_'):
         importances = model.feature_importances_
         indices = np.argsort(importances)[::-1]
@@ -359,7 +346,6 @@ def calculate_permutation_importance_all(model, X_test, y_test, feature_names, m
         return result_df, "GINI/GAIN based"
     
     else:
-        # Permutation importance dla Naive Bayes
         y_pred_baseline = model.predict(X_test)
         baseline_accuracy = accuracy_score(y_test, y_pred_baseline)
         
@@ -410,9 +396,7 @@ def plot_feature_importance(importance_df, model_name):
     plt.savefig(f'feature_importance_{model_name.replace(" ", "_")}.png', dpi=300)
     plt.close()
 
-# =======================
-# 7. TRENING MODELI
-# =======================
+
 
 def train_and_evaluate_model(X_train, X_test, y_train, y_test, model_name, model):
     model.fit(X_train, y_train)
@@ -442,9 +426,7 @@ def train_and_evaluate_model(X_train, X_test, y_train, y_test, model_name, model
     }
     return results, model, y_pred
 
-# =======================
-# 8. MAIN
-# =======================
+
 
 def main():
     print("=" * 80)
@@ -536,7 +518,6 @@ def main():
         X_train, X_test, y_train, y_test,
         "Decision Tree (Custom)", model_dt_custom
     )
-    # Upewnij się że model ma feature_importances_
     assert hasattr(model_dt_custom, 'feature_importances_'), "Custom model nie ma feature_importances_"
 
     results_list.append(result4)
@@ -585,7 +566,6 @@ def main():
     print("✓ Wyniki zapisane do 'model_comparison_results.csv'")
     print()
 
-    # ===== MACIERZE BŁĘDÓW I WAŻNOŚĆ CECH =====
     print("\n\n" + "="*80)
     print("ANALIZA MACIERZY BŁĘDÓW I WAŻNOŚCI CECH")
     print("="*80)
@@ -618,11 +598,9 @@ def main():
         print(f"# {model_name}")
         print(f"{'#'*80}")
         
-        # Macierz błędów
         cm = plot_confusion_matrix(y_test, y_pred, model_name)
         print_confusion_matrix_analysis(cm, model_name)
         
-        # Ważność cech
         print(f"\n\n{'='*60}")
         print(f"WAŻNOŚĆ CECH - {model_name}")
         print(f"{'='*60}\n")
@@ -646,7 +624,6 @@ def main():
             'feature_importance': importance_df
         }
     
-    # Porównanie cech między modelami
     print(f"\n\n{'='*80}")
     print("PORÓWNANIE WAŻNOŚCI CECH MIĘDZY MODELAMI")
     print(f"{'='*80}\n")
